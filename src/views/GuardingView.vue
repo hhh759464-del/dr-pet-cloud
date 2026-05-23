@@ -10,7 +10,7 @@ const router = useRouter()
 const route = useRoute()
 
 const {
-  state, isListening, currentDb, displayDb, frequencyData, timeData,
+  state, isListening, currentDb, displayDb, smoothedDb, frequencyData, timeData,
   startListening, stopListening, setOnTrigger, setOnStateChange,
   hasCalibration, startCooldown, getCooldownRemaining,
   getThreshold, getEBase, disconnectMic, reconnectMic,
@@ -114,32 +114,37 @@ function handleStateChange(newState, prev) {
 
 async function handleAnxiety(db) {
   const now = new Date()
-  let voicePlayed = false
-  let voiceId = null
+  const peakDb = displayDb.value  // capture BEFORE any async — voice playback changes currentDb
 
-  // Disconnect mic to prevent feedback from playing voice
   disconnectMic()
 
-  voiceId = await playRandomVoice()
-  voicePlayed = !!voiceId
+  let voiceId = null
+  try {
+    voiceId = await playRandomVoice()
+  } catch {
+    voiceId = '__tone__'
+  }
 
-  const event = { time: now, peakDb: displayDb.value, voicePlayed }
+  const event = { time: now, peakDb, voicePlayed: !!voiceId }
   anxietyEvents.value.push(event)
 
   if (sessionId.value) {
-    await supabase.from('anxiety_events').insert({
-      session_id: sessionId.value,
-      triggered_at: now.toISOString(),
-      duration_sec: 3,
-      peak_db: displayDb.value,
-      voice_played_id: voiceId || null,
-    })
-    await supabase.from('guard_sessions').update({
-      total_anxiety_count: anxietyEvents.value.length,
-    }).eq('id', sessionId.value)
+    try {
+      await supabase.from('anxiety_events').insert({
+        session_id: sessionId.value,
+        triggered_at: now.toISOString(),
+        duration_sec: 3,
+        peak_db: peakDb,
+        voice_played_id: voiceId || null,
+      })
+      await supabase.from('guard_sessions').update({
+        total_anxiety_count: anxietyEvents.value.length,
+      }).eq('id', sessionId.value)
+    } catch (err) {
+      console.warn('[GuardingView] Failed to save anxiety event:', err.message)
+    }
   }
 
-  // After voice playback, enter cooldown
   startCooldown()
 }
 
@@ -357,7 +362,7 @@ const threshold = computed(() => getThreshold())
 
       <!-- Current dB -->
       <p class="text-xs text-gray-400 mt-4">
-        当前: {{ displayDb }} dB / 阈值: +{{ toDisplayDb(threshold) }} dB
+        当前: {{ smoothedDb }} dB / 阈值: +{{ toDisplayDb(threshold) }} dB
       </p>
     </div>
 

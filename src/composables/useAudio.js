@@ -3,8 +3,13 @@ import { ref, computed } from 'vue'
 // ── sizing & detection constants ──
 const BODY_SIZE_DELTA = { small: 18, medium: 24, large: 30 }
 const COOLDOWN_DEFAULT_MS = 60000
-const SUDDEN_JUMP_DB = 10    // dB above recent average = bark
-const SUSTAIN_SAMPLES = 3    // must stay above for 3 samples (300ms)
+const SUSTAIN_SAMPLES = 4      // ~67ms at 60fps — filters clicks, catches bark onset
+const SETTLE_FRAMES = 90       // ~1.5s at 60fps — EMA stabilization after cooldown/trigger
+const EMA_ALPHA = 0.10         // detection EMA smoothing
+const DISPLAY_ALPHA = 0.35     // display needle smoothing
+const MIN_JUMP_DB = 6          // minimum jump threshold
+const MAX_JUMP_DB = 16         // maximum jump threshold
+const DEFAULT_JUMP_DB = 8      // fallback when no calibration
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
@@ -25,12 +30,23 @@ export function useAudio() {
   const calibrationProgress = ref(0)
   const calibrationStep = ref(0)
 
+  // Smoothed display dB — separate EMA from detection for stable UI
+  const smoothedDb = ref(0)
+
   // Display dB: relative to environment baseline (0 = baseline)
   const displayDb = computed(() => {
     const e = E_base.value
     if (e == null) return currentDb.value
     return Math.round(currentDb.value - e)
   })
+
+  // Jump threshold derived from calibration (or default)
+  function getJumpThreshold() {
+    if (threshold != null && E_base.value != null) {
+      return clamp(Math.round((threshold - E_base.value) * 0.35), MIN_JUMP_DB, MAX_JUMP_DB)
+    }
+    return DEFAULT_JUMP_DB
+  }
 
   let audioContext = null
   let analyser = null
@@ -42,11 +58,9 @@ export function useAudio() {
   let onStateChangeCallback = null
 
   // EMA-based sudden-jump detection
-  let dbEma = null            // exponential moving average of recent dB
+  let dbEma = null
   let consecutiveJumps = 0
-  let settleSamples = 0       // post-cooldown settle counter
-  const EMA_ALPHA = 0.08      // smoothing (lower = more stable baseline)
-  const SETTLE_FRAMES = 30    // ~0.5s at 60fps — let EMA stabilize before detection
+  let settleSamples = 0
 
   let cooldownUntil = null
   let cooldownTimer = null
@@ -95,7 +109,6 @@ export function useAudio() {
       await new Promise(r => setTimeout(r, 100))
     }
     samples.sort((a, b) => a - b)
-    // Use median as typical ambient level
     const mid = samples[Math.floor(samples.length / 2)]
     E_base.value = Math.round(mid)
   }
@@ -112,7 +125,7 @@ export function useAudio() {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       audioContext = new (window.AudioContext || window.webkitAudioContext)()
       analyser = audioContext.createAnalyser()
-      analyser.fftSize = 256
+      analyser.fftSize = 1024
       sourceNode = audioContext.createMediaStreamSource(stream)
       sourceNode.connect(analyser)
 
@@ -216,7 +229,7 @@ export function useAudio() {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true })
         audioContext = new (window.AudioContext || window.webkitAudioContext)()
         analyser = audioContext.createAnalyser()
-        analyser.fftSize = 256
+        analyser.fftSize = 1024
         sourceNode = audioContext.createMediaStreamSource(stream)
         sourceNode.connect(analyser)
       } catch (err) {
@@ -236,6 +249,7 @@ export function useAudio() {
     dbEma = null
     consecutiveJumps = 0
     settleSamples = 0
+    smoothedDb.value = 0
 
     isListening.value = true
     changeState('monitoring')
@@ -261,9 +275,17 @@ export function useAudio() {
 
     const db = computeDb(timeData.value)
     currentDb.value = Math.round(db)
+
+    // Smooth display value separately from detection
+    if (smoothedDb.value === 0) {
+      smoothedDb.value = displayDb.value
+    } else {
+      smoothedDb.value = Math.round(smoothedDb.value * (1 - DISPLAY_ALPHA) + displayDb.value * DISPLAY_ALPHA)
+    }
+
     if (onDbUpdateCallback) onDbUpdateCallback(db)
 
-    // Sudden-jump detection (EMA-based)
+    // Sudden-jump detection (EMA-based, calibration-driven jump threshold)
     if (state.value === 'monitoring') {
       if (dbEma == null) {
         dbEma = db
@@ -272,20 +294,19 @@ export function useAudio() {
         dbEma = dbEma * (1 - EMA_ALPHA) + db * EMA_ALPHA
       }
 
-      // Post-cooldown settle: let EMA stabilize before checking for jumps
       if (settleSamples > 0) {
         settleSamples--
       } else {
         const jump = db - dbEma
-        const aboveThreshold = threshold == null || db >= threshold
-        if (jump >= SUDDEN_JUMP_DB && aboveThreshold) {
+        const jumpDb = getJumpThreshold()
+        if (jump >= jumpDb) {
           consecutiveJumps++
           if (consecutiveJumps >= SUSTAIN_SAMPLES) {
             changeState('triggered')
             isTriggered.value = true
             consecutiveJumps = 0
-            dbEma = db  // reset EMA so post-bark level becomes new baseline
-            settleSamples = SETTLE_FRAMES  // re-settle after trigger too
+            dbEma = db
+            settleSamples = SETTLE_FRAMES
             if (onTriggerCallback) onTriggerCallback(db, markingBuffer)
           }
         } else {
@@ -306,7 +327,6 @@ export function useAudio() {
     if (cooldownTimer) clearTimeout(cooldownTimer)
     cooldownTimer = setTimeout(() => {
       if (state.value === 'cooldown') {
-        // Reset detection on resume
         dbEma = null
         consecutiveJumps = 0
         settleSamples = 0
@@ -378,6 +398,7 @@ export function useAudio() {
     isTriggered.value = false
     isPlayingSoothing.value = false
     currentDb.value = 0
+    smoothedDb.value = 0
     dbEma = null
     consecutiveJumps = 0
     settleSamples = 0
@@ -394,7 +415,7 @@ export function useAudio() {
   }
 
   return {
-    state, isListening, currentDb, displayDb, isTriggered, isPlayingSoothing,
+    state, isListening, currentDb, displayDb, smoothedDb, isTriggered, isPlayingSoothing,
     frequencyData, timeData,
     calibrationProgress, calibrationStep,
     E_base, P_peak,
