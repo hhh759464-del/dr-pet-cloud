@@ -73,10 +73,6 @@ const routes = [
     component: () => import('../views/AudioLogView.vue'),
     meta: { requiresAuth: true },
   },
-  {
-    path: '/',
-    redirect: '/pets',
-  },
 ]
 
 const router = createRouter({
@@ -86,6 +82,10 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
   const { data: { session } } = await supabase.auth.getSession()
+  // Handle root path based on auth state (avoid double redirect)
+  if (to.path === '/') {
+    return session ? '/pets' : '/auth'
+  }
   if (to.meta.requiresAuth && !session) return '/auth'
   if (to.path === '/auth' && session) return '/pets'
 })

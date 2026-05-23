@@ -24,8 +24,8 @@ export function useAudio() {
   const currentDb = ref(0)
   const isTriggered = ref(false)
   const isPlayingSoothing = ref(false)
-  const frequencyData = ref(new Uint8Array())
-  const timeData = ref(new Uint8Array())
+  const frequencyData = ref(new Uint8Array(128).fill(0))
+  const timeData = ref(new Uint8Array(128).fill(128))
   const calibrationProgress = ref(0)   // 0–100
   const calibrationStep = ref(0)       // 0=none, 1=env, 2=pet, 3=done
 
