@@ -124,7 +124,7 @@ async function handleAnxiety(db) {
   voiceId = await playRandomVoice()
   voicePlayed = !!voiceId
 
-  const event = { time: now, peakDb: currentDb.value, voicePlayed }
+  const event = { time: now, peakDb: displayDb.value, voicePlayed }
   anxietyEvents.value.push(event)
 
   if (sessionId.value) {
@@ -132,7 +132,7 @@ async function handleAnxiety(db) {
       session_id: sessionId.value,
       triggered_at: now.toISOString(),
       duration_sec: 3,
-      peak_db: currentDb.value,
+      peak_db: displayDb.value,
       voice_played_id: voiceId || null,
     })
     await supabase.from('guard_sessions').update({
@@ -157,12 +157,12 @@ async function playRandomVoice() {
       return voice.id
     } catch {
       playTone()
-      return null
+      return '__tone__'
     }
   } else {
     currentVoiceText.value = '（未录制安抚语音，播放默认提示音）'
     playTone()
-    return null
+    return '__tone__'
   }
 }
 
@@ -223,7 +223,7 @@ async function checkMidnight() {
 }
 
 function buildStats(date, events) {
-  const peak = events.reduce((max, e) => e.peakDb > max ? e.peakDb : max, 0) || 0
+  const peak = events.reduce((max, e) => e.peakDb > max ? e.peakDb : max, -Infinity) || 0
   const peakEvent = events.find(e => e.peakDb === peak)
   return {
     petName: pet.value?.name || '未知',

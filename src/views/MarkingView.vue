@@ -37,7 +37,7 @@ onMounted(async () => {
       .limit(1)
       .maybeSingle()
 
-    if (calData?.threshold != null) {
+    if (calData?.threshold != null && calData?.E_base != null) {
       setCalibration(calData.E_base, calData.P_peak, calData.threshold)
     }
   }
