@@ -56,6 +56,24 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/calibrate/:petId',
+    name: 'Calibrate',
+    component: () => import('../views/CalibrationView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/marking/:petId',
+    name: 'Marking',
+    component: () => import('../views/MarkingView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/audio-log/:petId',
+    name: 'AudioLog',
+    component: () => import('../views/AudioLogView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/',
     redirect: '/pets',
   },
