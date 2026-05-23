@@ -214,8 +214,11 @@ export function useAudio() {
   }
 
   // ── monitoring loop ──
-  async function startListening(mode = 'guard') {
-    if (!hasCalibration()) throw new Error('请先完成校准')
+  async function startListening(mode = 'guard', bodySize = 'medium') {
+    if (!hasCalibration()) {
+      // Auto-apply body-size fallback if no calibration yet
+      applyCalibration(bodySize, 'body_size_fallback')
+    }
 
     if (stream && audioContext && analyser) {
       // reuse existing audio context from calibration

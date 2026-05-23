@@ -73,18 +73,22 @@ function doAdjust(delta) {
 }
 
 async function saveCalibration(source) {
-  const { E_base: e, P_peak: p } = getCalibration()
-  const t = getThreshold()
-  const { error } = await supabase.from('pet_calibrations').insert({
-    pet_id: pet.value?.id,
-    E_base: e,
-    P_peak: p,
-    threshold: t,
-    body_size: pet.value?.body_size || 'medium',
-    source: source || calibrationResult.value?.source || 'calibration',
-    calibrated_at: new Date().toISOString(),
-  })
-  if (error) console.warn('Failed to save calibration:', error.message)
+  try {
+    const { E_base: e, P_peak: p } = getCalibration()
+    const t = getThreshold()
+    const { error } = await supabase.from('pet_calibrations').insert({
+      pet_id: pet.value?.id,
+      E_base: e,
+      P_peak: p,
+      threshold: t,
+      body_size: pet.value?.body_size || 'medium',
+      source: source || calibrationResult.value?.source || 'calibration',
+      calibrated_at: new Date().toISOString(),
+    })
+    if (error) console.warn('Failed to save calibration:', error.message)
+  } catch {
+    // pet_calibrations table may not exist yet; calibration is still in memory
+  }
 }
 
 function goToGuard() {

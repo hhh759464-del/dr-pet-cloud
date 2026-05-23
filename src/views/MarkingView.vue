@@ -68,7 +68,7 @@ onMounted(async () => {
   setOnTrigger(handleTrigger)
   setOnStateChange(handleStateChange)
 
-  await startListening('mark')
+  await startListening('mark', petData?.body_size || 'medium')
 })
 
 onUnmounted(() => {

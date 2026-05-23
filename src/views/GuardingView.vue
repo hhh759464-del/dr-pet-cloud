@@ -78,7 +78,7 @@ onMounted(async () => {
   setOnTrigger(handleAnxiety)
   setOnStateChange(handleStateChange)
 
-  await startListening('guard')
+  await startListening('guard', petData?.body_size || 'medium')
   midnightTimer = setInterval(checkMidnight, 60000)
 })
 
