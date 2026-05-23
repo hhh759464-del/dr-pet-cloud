@@ -1,24 +1,21 @@
 import { ref, computed } from 'vue'
 
-// ── default sizing & windowing constants (see PRD §6.4, §6.7) ──
-const BODY_SIZE_DELTA = { small: 10, medium: 15, large: 20 }
-const WINDOW_MS = 5000
-const SAMPLE_INTERVAL_MS = 100
-const MIN_SPIKE_POINTS = 3
-const SPIKE_COUNT_TRIGGER = 3
+// ── sizing & detection constants ──
+const BODY_SIZE_DELTA = { small: 18, medium: 24, large: 30 }
 const COOLDOWN_DEFAULT_MS = 60000
+const SUDDEN_JUMP_DB = 10    // dB above recent average = bark
+const SUSTAIN_SAMPLES = 3    // must stay above for 3 samples (300ms)
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
-// ── module-level shared state (persists across useAudio() calls) ──
+// ── module-level shared state ──
 const E_base = ref(null)
 const P_peak = ref(null)
 let threshold = null
-let windowMs = WINDOW_MS
 let cooldownMs = COOLDOWN_DEFAULT_MS
 
 export function useAudio() {
-  const state = ref('idle') // idle | calibrating | monitoring | triggered | cooldown
+  const state = ref('idle')
   const isListening = ref(false)
   const currentDb = ref(0)
   const isTriggered = ref(false)
@@ -26,9 +23,9 @@ export function useAudio() {
   const frequencyData = ref(new Uint8Array(128).fill(0))
   const timeData = ref(new Uint8Array(128).fill(128))
   const calibrationProgress = ref(0)
-  const calibrationStep = ref(0)       // 0=none, 1=env, 2=pet, 3=done
+  const calibrationStep = ref(0)
 
-  // Display dB: currentDb relative to E_base (0 = environment baseline)
+  // Display dB: relative to environment baseline (0 = baseline)
   const displayDb = computed(() => {
     const e = E_base.value
     if (e == null) return currentDb.value
@@ -44,8 +41,12 @@ export function useAudio() {
   let onDbUpdateCallback = null
   let onStateChangeCallback = null
 
-  let spikeBuffer = []
-  const maxBufLen = Math.ceil(WINDOW_MS / SAMPLE_INTERVAL_MS)
+  // EMA-based sudden-jump detection
+  let dbEma = null            // exponential moving average of recent dB
+  let consecutiveJumps = 0
+  let settleSamples = 0       // post-cooldown settle counter
+  const EMA_ALPHA = 0.08      // smoothing (lower = more stable baseline)
+  const SETTLE_FRAMES = 30    // ~0.5s at 60fps — let EMA stabilize before detection
 
   let cooldownUntil = null
   let cooldownTimer = null
@@ -66,33 +67,12 @@ export function useAudio() {
     return rms > 0 ? 20 * Math.log10(rms) : -100
   }
 
-  function countSpikes() {
-    let spikes = 0
-    let run = 0
-    for (let i = 0; i < spikeBuffer.length; i++) {
-      if (spikeBuffer[i] === 1) {
-        run++
-      } else {
-        if (run >= MIN_SPIKE_POINTS) spikes++
-        run = 0
-      }
-    }
-    if (run >= MIN_SPIKE_POINTS) spikes++
-    return spikes
-  }
-
-  function pushSpike(val) {
-    spikeBuffer.push(val)
-    if (spikeBuffer.length > maxBufLen) spikeBuffer.shift()
-  }
-
   function changeState(newState) {
     const prev = state.value
     state.value = newState
     if (onStateChangeCallback) onStateChangeCallback(newState, prev)
   }
 
-  // ── mic disconnect / reconnect ──
   function disconnectMic() {
     if (sourceNode && analyser) {
       try { sourceNode.disconnect(analyser) } catch (_) { /* already disconnected */ }
@@ -104,7 +84,7 @@ export function useAudio() {
     }
   }
 
-  // ── quick auto-baseline: sample 2s of ambient noise ──
+  // Quick 2s ambient sampling for auto-baseline
   async function quickBaseline() {
     const samples = []
     const buf = new Uint8Array(analyser.frequencyBinCount)
@@ -115,10 +95,9 @@ export function useAudio() {
       await new Promise(r => setTimeout(r, 100))
     }
     samples.sort((a, b) => a - b)
-    // Use lower third as baseline (ignore transient noises)
-    const lower = samples.slice(0, Math.ceil(samples.length / 3))
-    const baseline = lower.reduce((a, b) => a + b, 0) / lower.length
-    E_base.value = Math.round(baseline)
+    // Use median as typical ambient level
+    const mid = samples[Math.floor(samples.length / 2)]
+    E_base.value = Math.round(mid)
   }
 
   // ── calibration ──
@@ -193,10 +172,10 @@ export function useAudio() {
   function applyCalibration(bodySize, source = 'calibration') {
     const e = E_base.value
     const p = P_peak.value
-    const delta = (bodySize && BODY_SIZE_DELTA[bodySize]) || 15
+    const delta = (bodySize && BODY_SIZE_DELTA[bodySize]) || 24
 
     if (e == null) {
-      console.warn('[useAudio] applyCalibration: E_base is null, using delta as threshold')
+      console.warn('[useAudio] applyCalibration: E_base is null, using 0')
       E_base.value = 0
       threshold = Math.round(delta)
     } else if (p != null && p > e) {
@@ -228,9 +207,8 @@ export function useAudio() {
     return threshold != null && E_base.value != null
   }
 
-  // ── monitoring loop ──
+  // ── monitoring ──
   async function startListening(mode = 'guard', bodySize = 'medium') {
-    // Set up audio context first
     if (stream && audioContext && analyser) {
       reconnectMic()
     } else {
@@ -246,7 +224,6 @@ export function useAudio() {
       }
     }
 
-    // Quick 2s auto-baseline if no calibration exists
     if (!hasCalibration()) {
       await quickBaseline()
       applyCalibration(bodySize, 'body_size_fallback')
@@ -254,7 +231,12 @@ export function useAudio() {
 
     frequencyData.value = new Uint8Array(analyser.frequencyBinCount)
     timeData.value = new Uint8Array(analyser.frequencyBinCount)
-    spikeBuffer = []
+
+    // Reset detection state
+    dbEma = null
+    consecutiveJumps = 0
+    settleSamples = 0
+
     isListening.value = true
     changeState('monitoring')
 
@@ -281,14 +263,34 @@ export function useAudio() {
     currentDb.value = Math.round(db)
     if (onDbUpdateCallback) onDbUpdateCallback(db)
 
+    // Sudden-jump detection (EMA-based)
     if (state.value === 'monitoring') {
-      pushSpike(db >= threshold ? 1 : 0)
-      const spikes = countSpikes()
-      if (spikes >= SPIKE_COUNT_TRIGGER) {
-        changeState('triggered')
-        isTriggered.value = true
-        spikeBuffer = []
-        if (onTriggerCallback) onTriggerCallback(db, markingBuffer)
+      if (dbEma == null) {
+        dbEma = db
+        settleSamples = SETTLE_FRAMES
+      } else {
+        dbEma = dbEma * (1 - EMA_ALPHA) + db * EMA_ALPHA
+      }
+
+      // Post-cooldown settle: let EMA stabilize before checking for jumps
+      if (settleSamples > 0) {
+        settleSamples--
+      } else {
+        const jump = db - dbEma
+        const aboveThreshold = threshold == null || db >= threshold
+        if (jump >= SUDDEN_JUMP_DB && aboveThreshold) {
+          consecutiveJumps++
+          if (consecutiveJumps >= SUSTAIN_SAMPLES) {
+            changeState('triggered')
+            isTriggered.value = true
+            consecutiveJumps = 0
+            dbEma = db  // reset EMA so post-bark level becomes new baseline
+            settleSamples = SETTLE_FRAMES  // re-settle after trigger too
+            if (onTriggerCallback) onTriggerCallback(db, markingBuffer)
+          }
+        } else {
+          consecutiveJumps = 0
+        }
       }
     }
 
@@ -300,11 +302,14 @@ export function useAudio() {
     changeState('cooldown')
     reconnectMic()
     cooldownUntil = Date.now() + cooldownMs
-    spikeBuffer = []
 
     if (cooldownTimer) clearTimeout(cooldownTimer)
     cooldownTimer = setTimeout(() => {
       if (state.value === 'cooldown') {
+        // Reset detection on resume
+        dbEma = null
+        consecutiveJumps = 0
+        settleSamples = 0
         changeState('monitoring')
         cooldownUntil = null
       }
@@ -319,8 +324,7 @@ export function useAudio() {
   // ── marking ──
   function captureSnippet() {
     if (!markingBuffer.length) return null
-    const blob = new Blob(markingBuffer.slice(-6), { type: 'audio/webm' })
-    return blob
+    return new Blob(markingBuffer.slice(-6), { type: 'audio/webm' })
   }
 
   function setMarkingContext(petId, sessionId) {
@@ -332,17 +336,15 @@ export function useAudio() {
     return { petId: markingPetId, sessionId: markingSessionId }
   }
 
-  // ── public setup ──
+  // ── public API ──
   function setOnTrigger(cb) { onTriggerCallback = cb }
   function setOnDbUpdate(cb) { onDbUpdateCallback = cb }
   function setOnStateChange(cb) { onStateChangeCallback = cb }
 
-  function setWindowMs(ms) {
-    windowMs = clamp(ms, 3000, 8000)
-  }
   function setCooldownMs(ms) {
     cooldownMs = clamp(ms, 30000, 120000)
   }
+
   function getThreshold() { return threshold }
   function getEBase() { return E_base.value }
 
@@ -353,7 +355,6 @@ export function useAudio() {
     threshold = clamp(Math.round(threshold + delta), lo, hi)
   }
 
-  // ── stop ──
   function stopListening() {
     isListening.value = false
     changeState('idle')
@@ -377,7 +378,9 @@ export function useAudio() {
     isTriggered.value = false
     isPlayingSoothing.value = false
     currentDb.value = 0
-    spikeBuffer = []
+    dbEma = null
+    consecutiveJumps = 0
+    settleSamples = 0
     cooldownUntil = null
     markingBuffer = []
     markingPetId = null
@@ -399,7 +402,7 @@ export function useAudio() {
     getCalibration, setCalibration, hasCalibration,
     startListening, stopListening,
     setOnTrigger, setOnDbUpdate, setOnStateChange,
-    setWindowMs, setCooldownMs,
+    setCooldownMs,
     getThreshold, getEBase, adjustThreshold,
     disconnectMic, reconnectMic, startCooldown,
     getCooldownRemaining,
