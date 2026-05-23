@@ -6,7 +6,7 @@ import { useAudio } from '../composables/useAudio'
 
 const router = useRouter()
 const route = useRoute()
-const { setCalibration } = useAudio()
+const { setCalibration, toDisplayDb } = useAudio()
 
 const pet = ref(null)
 const groupedSnippets = ref([]) // [{ date, snippets: [...] }]
@@ -225,7 +225,7 @@ function getLabelTag(snippet) {
                   :style="{ width: dbBarWidth(snippet.peak_db) + '%' }" />
               </div>
 
-              <span class="text-sm font-semibold text-amber-700 w-12 text-right">{{ snippet.peak_db }} dB</span>
+              <span class="text-sm font-semibold text-amber-700 w-12 text-right">{{ toDisplayDb(snippet.peak_db) }} dB</span>
             </div>
 
             <!-- Bottom row: play + label buttons -->
@@ -274,10 +274,10 @@ function getLabelTag(snippet) {
       <div v-if="showSuggestion" class="bg-white/80 rounded-xl p-4 mt-4 border border-amber-200">
         <h4 class="text-sm font-semibold text-amber-800 mb-3">📊 阈值分析</h4>
         <div class="text-xs text-gray-500 space-y-1 mb-3">
-          <p>标记了 {{ suggestion.dogMin ? '若干' : '0' }} 条"是狗叫" — 最低狗叫声：<span class="font-semibold text-amber-700">{{ suggestion.dogMin }} dB</span></p>
-          <p>标记了 {{ suggestion.noiseMax ? '若干' : '0' }} 条"不是" — 最高噪音：<span class="font-semibold text-gray-600">{{ suggestion.noiseMax }} dB</span></p>
-          <p class="pt-2">→ 建议阈值：<span class="font-bold text-amber-800 text-base">{{ suggestion.suggested }} dB</span></p>
-          <p class="text-xs text-gray-300">（狗叫最低值 {{ suggestion.dogMin }} 和噪音最高值 {{ suggestion.noiseMax }} 的中点）</p>
+          <p>标记了 {{ suggestion.dogMin ? '若干' : '0' }} 条"是狗叫" — 最低狗叫声：<span class="font-semibold text-amber-700">{{ toDisplayDb(suggestion.dogMin) }} dB</span></p>
+          <p>标记了 {{ suggestion.noiseMax ? '若干' : '0' }} 条"不是" — 最高噪音：<span class="font-semibold text-gray-600">{{ toDisplayDb(suggestion.noiseMax) }} dB</span></p>
+          <p class="pt-2">→ 建议阈值：<span class="font-bold text-amber-800 text-base">+{{ toDisplayDb(suggestion.suggested) }} dB</span></p>
+          <p class="text-xs text-gray-300">（狗叫最低值 {{ toDisplayDb(suggestion.dogMin) }} 和噪音最高值 {{ toDisplayDb(suggestion.noiseMax) }} 的中点）</p>
         </div>
         <button @click="applySuggestion"
           class="w-full py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-xl transition cursor-pointer">

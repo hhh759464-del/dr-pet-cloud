@@ -13,6 +13,7 @@ const {
   calibrate, calibrateStep2, applyCalibration,
   getThreshold, getCalibration, stopListening,
   adjustThreshold: adjustAudioThreshold,
+  toDisplayDb,
 } = useAudio()
 
 const pet = ref(null)
@@ -139,7 +140,7 @@ function goToGuard() {
       </div>
       <p class="text-xs text-gray-400 mb-8">{{ Math.ceil(calibrationProgress * 0.1) }} / 10 秒</p>
 
-      <p class="text-sm text-amber-700 mb-4">当前：{{ currentDb }} dB</p>
+      <p class="text-sm text-amber-700 mb-4">当前：{{ toDisplayDb(currentDb) }} dB</p>
 
       <p class="text-xs text-gray-400 text-center max-w-xs">
         提示：正常的环境声音（窗外的车流声、空调声）都会被计入基线。
@@ -181,7 +182,7 @@ function goToGuard() {
       </div>
       <p class="text-xs text-gray-400 mb-8">{{ Math.ceil(calibrationProgress * 0.15) }} / 15 秒</p>
 
-      <p class="text-sm text-amber-700 mb-4">当前：{{ currentDb }} dB</p>
+      <p class="text-sm text-amber-700 mb-4">当前：{{ toDisplayDb(currentDb) }} dB</p>
     </div>
 
     <!-- Done -->
@@ -192,15 +193,15 @@ function goToGuard() {
       <div v-if="calibrationResult" class="bg-white/70 rounded-xl p-4 text-sm text-amber-700 space-y-2 mb-4 w-full max-w-xs">
         <div class="flex justify-between">
           <span>环境基线</span>
-          <span class="font-semibold">{{ calibrationResult.E_base }} dB</span>
+          <span class="font-semibold">0 dB</span>
         </div>
         <div class="flex justify-between">
           <span>宠物叫声峰值</span>
-          <span class="font-semibold">{{ calibrationResult.P_peak ?? '未采样' }} dB</span>
+          <span class="font-semibold">{{ calibrationResult.P_peak != null ? toDisplayDb(calibrationResult.P_peak) : '未采样' }} dB</span>
         </div>
         <div class="flex justify-between border-t border-amber-200 pt-2">
           <span>触发阈值</span>
-          <span class="font-semibold text-amber-800 text-lg">{{ calibrationResult.threshold }} dB</span>
+          <span class="font-semibold text-amber-800 text-lg">+{{ toDisplayDb(calibrationResult.threshold) }} dB</span>
         </div>
         <p class="text-xs text-gray-400 mt-1">
           {{ calibrationResult.source === 'calibration' ? '基于双步校准计算' : '基于体型自动估算' }}

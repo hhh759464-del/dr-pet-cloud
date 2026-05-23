@@ -375,6 +375,13 @@ export function useAudio() {
     markingSessionId = null
   }
 
+  // Convert raw relative dB to display value (0 = environment baseline)
+  function toDisplayDb(rawDb) {
+    const e = E_base.value
+    if (e == null) return rawDb
+    return Math.round(rawDb - e)
+  }
+
   return {
     state, isListening, currentDb, isTriggered, isPlayingSoothing,
     frequencyData, timeData,
@@ -389,5 +396,6 @@ export function useAudio() {
     disconnectMic, reconnectMic, startCooldown,
     getCooldownRemaining,
     captureSnippet, setMarkingContext, getMarkingContext,
+    toDisplayDb,
   }
 }

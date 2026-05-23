@@ -10,7 +10,7 @@ const route = useRoute()
 const {
   getThreshold, getEBase,
   adjustThreshold, setWindowMs, setCooldownMs,
-  hasCalibration, setCalibration,
+  hasCalibration, setCalibration, toDisplayDb,
 } = useAudio()
 
 const pet = ref(null)
@@ -127,8 +127,8 @@ async function clearMarkedData() {
           <h3 class="text-sm font-semibold text-gray-700 mb-3">── 阈值微调 ──</h3>
 
           <div class="text-center mb-3">
-            <p class="text-2xl font-bold text-amber-800">{{ threshold ?? '--' }} dB</p>
-            <p class="text-xs text-gray-400">相对基线 {{ thresholdDelta }}</p>
+            <p class="text-2xl font-bold text-amber-800">+{{ threshold != null ? toDisplayDb(threshold) : '--' }} dB</p>
+            <p class="text-xs text-gray-400">环境基线为 0，阈值高于基线 {{ threshold != null ? toDisplayDb(threshold) : '--' }} dB</p>
             <p class="text-xs text-gray-300 mt-0.5">上次校准：{{ lastCalDate }}（{{ calSource }}）</p>
           </div>
 

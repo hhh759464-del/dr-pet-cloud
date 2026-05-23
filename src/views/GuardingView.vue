@@ -14,7 +14,7 @@ const {
   startListening, stopListening, setOnTrigger, setOnStateChange,
   hasCalibration, startCooldown, getCooldownRemaining,
   getThreshold, getEBase, disconnectMic, reconnectMic,
-  setCalibration,
+  setCalibration, toDisplayDb,
 } = useAudio()
 
 const pet = ref(null)
@@ -357,7 +357,7 @@ const threshold = computed(() => getThreshold())
 
       <!-- Current dB -->
       <p class="text-xs text-gray-400 mt-4">
-        当前: {{ currentDb }} dB / 阈值: {{ threshold }} dB
+        当前: {{ toDisplayDb(currentDb) }} dB / 阈值: +{{ toDisplayDb(threshold) }} dB
       </p>
     </div>
 
