@@ -42,18 +42,26 @@ onMounted(async () => {
     }
   }
 
-  if (!hasCalibration()) {
-    router.push(`/calibrate/${route.params.petId}?mode=mark`)
-    return
-  }
+  // Proceed even without calibration — useAudio will use body-size fallback
 
-  // Create a marking session
-  const { data: sessionData } = await supabase.from('guard_sessions').insert({
-    pet_id: route.params.petId,
-    start_time: new Date().toISOString(),
-    total_anxiety_count: 0,
-    mode: 'mark',
-  }).select().single()
+  // Try insert with mode column; fallback if DB not yet migrated
+  let sessionData = null
+  try {
+    const res = await supabase.from('guard_sessions').insert({
+      pet_id: route.params.petId,
+      start_time: new Date().toISOString(),
+      total_anxiety_count: 0,
+      mode: 'mark',
+    }).select().single()
+    sessionData = res.data
+  } catch {
+    const res = await supabase.from('guard_sessions').insert({
+      pet_id: route.params.petId,
+      start_time: new Date().toISOString(),
+      total_anxiety_count: 0,
+    }).select().single()
+    sessionData = res.data
+  }
   sessionId.value = sessionData?.id
   setMarkingContext(route.params.petId, sessionId.value)
 

@@ -48,20 +48,30 @@ onMounted(async () => {
     }
   }
 
-  if (!hasCalibration()) {
-    router.push(`/calibrate/${route.params.petId}?mode=guard`)
-    return
-  }
+  const calibrated = hasCalibration()
+  // If calibration exists, use it; otherwise body-size fallback will be used by useAudio
 
   const now = new Date()
   currentDay = now.toISOString().slice(0, 10)
 
-  const { data: sessionData } = await supabase.from('guard_sessions').insert({
-    pet_id: route.params.petId,
-    start_time: now.toISOString(),
-    total_anxiety_count: 0,
-    mode: 'guard',
-  }).select().single()
+  // Try insert with mode column; fallback if DB not yet migrated
+  let sessionData = null
+  try {
+    const res = await supabase.from('guard_sessions').insert({
+      pet_id: route.params.petId,
+      start_time: now.toISOString(),
+      total_anxiety_count: 0,
+      mode: 'guard',
+    }).select().single()
+    sessionData = res.data
+  } catch {
+    const res = await supabase.from('guard_sessions').insert({
+      pet_id: route.params.petId,
+      start_time: now.toISOString(),
+      total_anxiety_count: 0,
+    }).select().single()
+    sessionData = res.data
+  }
   sessionId.value = sessionData?.id
   sessionStart.value = now
 
