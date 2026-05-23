@@ -12,6 +12,18 @@ const pet = ref(null)
 const lastSession = ref(null)
 const unmarkedCount = ref(0)
 const showDebug = ref(false)
+const needsCalibration = ref(true)
+const calibrationChecked = ref(false)
+
+function skipCalibration() {
+  needsCalibration.value = false
+}
+
+function checkCalibration() {
+  if (calibrationChecked.value) return
+  needsCalibration.value = !hasCalibration()
+  calibrationChecked.value = true
+}
 
 onMounted(async () => {
   const { data: petData } = await supabase.from('pets').select('*').eq('id', route.params.petId).single()
@@ -27,16 +39,13 @@ onMounted(async () => {
       .limit(1)
       .maybeSingle()
 
-    if (calData?.threshold != null) {
+    // Only restore if both threshold AND E_base are valid (skip partial rows from AudioLogView)
+    if (calData?.threshold != null && calData?.E_base != null) {
       setCalibration(calData.E_base, calData.P_peak, calData.threshold)
     }
   }
 
-  const needsCalibration = ref(!hasCalibration())
-
-  function skipCalibration() {
-    needsCalibration.value = false
-  }
+  checkCalibration()
 
   // Load last session
   const { data: sessions } = await supabase

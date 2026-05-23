@@ -6,7 +6,7 @@ import { useAudio } from '../composables/useAudio'
 
 const router = useRouter()
 const route = useRoute()
-const { setCalibration, toDisplayDb } = useAudio()
+const { setCalibration, getCalibration, toDisplayDb } = useAudio()
 
 const pet = ref(null)
 const groupedSnippets = ref([]) // [{ date, snippets: [...] }]
@@ -133,15 +133,14 @@ async function labelSnippet(snippet, label) {
 
 function applySuggestion() {
   if (!suggestion.value) return
-  const e = pet.value?.body_size ? null : null
-  // Get current calibration E_base first
-  // We just set the threshold — E_base and P_peak stay the same
+  const current = getCalibration()
+  // Preserve existing E_base / P_peak — only update threshold
   setCalibration(null, null, suggestion.value.suggested)
 
   supabase.from('pet_calibrations').insert({
     pet_id: route.params.petId,
-    E_base: null,
-    P_peak: null,
+    E_base: current.E_base,   // keep existing, not null
+    P_peak: current.P_peak,
     threshold: suggestion.value.suggested,
     body_size: pet.value?.body_size || 'medium',
     source: 'manual_correction',

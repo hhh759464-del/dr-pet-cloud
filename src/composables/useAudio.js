@@ -188,6 +188,16 @@ export function useAudio() {
     const e = E_base.value
     const p = P_peak.value
 
+    if (e == null) {
+      E_base.value = -60
+      const delta = (bodySize && BODY_SIZE_DELTA[bodySize]) || 15
+      threshold = Math.round(-60 + delta)
+      calibrationStep.value = 3
+      changeState('idle')
+      isListening.value = false
+      return { E_base: -60, P_peak: p, threshold, source: 'body_size_fallback' }
+    }
+
     if (p != null && p > e) {
       threshold = e + (p - e) * 0.5
     } else if (bodySize && BODY_SIZE_DELTA[bodySize] !== undefined) {
@@ -211,9 +221,9 @@ export function useAudio() {
   }
 
   function setCalibration(e, p, t) {
-    E_base.value = e ?? null
-    P_peak.value = p ?? null
-    threshold = t ?? null
+    if (e != null) E_base.value = e
+    if (p != null) P_peak.value = p
+    if (t != null) threshold = t
   }
 
   function hasCalibration() {
