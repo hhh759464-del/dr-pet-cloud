@@ -75,6 +75,22 @@ onMounted(async () => {
   sessionId.value = sessionData?.id
   sessionStart.value = now
 
+  // 加载当前会话的历史事件
+  if (sessionData?.id) {
+    const { data: eventsData } = await supabase
+      .from('anxiety_events')
+      .select('*')
+      .eq('session_id', sessionData.id)
+      .order('triggered_at', { ascending: true })
+    if (eventsData) {
+      anxietyEvents.value = eventsData.map(e => ({
+        time: new Date(e.triggered_at),
+        peakDb: e.peak_db || 0,
+        voicePlayed: !!e.voice_played_id,
+      }))
+    }
+  }
+
   setOnTrigger(handleAnxiety)
   setOnStateChange(handleStateChange)
 
