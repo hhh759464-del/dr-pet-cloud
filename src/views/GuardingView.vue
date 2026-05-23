@@ -39,12 +39,12 @@ onMounted(async () => {
       .from('pet_calibrations')
       .select('*')
       .eq('pet_id', route.params.petId)
+      .not('E_base', 'is', null)
       .order('calibrated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    // Only restore if both threshold AND E_base are valid
-    if (calData?.threshold != null && calData?.E_base != null) {
+    if (calData?.threshold != null) {
       setCalibration(calData.E_base, calData.P_peak, calData.threshold)
     }
   }
@@ -223,8 +223,8 @@ async function checkMidnight() {
 }
 
 function buildStats(date, events) {
-  const peak = events.reduce((max, e) => e.peakDb > max ? e.peakDb : max, -Infinity) || 0
-  const peakEvent = events.find(e => e.peakDb === peak)
+  const peak = events.length ? events.reduce((max, e) => e.peakDb > max ? e.peakDb : max, -Infinity) : 0
+  const peakEvent = events.length ? events.find(e => e.peakDb === peak) : null
   return {
     petName: pet.value?.name || '未知',
     date,

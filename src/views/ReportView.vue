@@ -48,8 +48,8 @@ async function getVsYesterday(petId, todayDate, todayAnxietyCount) {
 
 function buildStats(session, events, petName) {
   const anxietyCount = events?.length || 0
-  const peak = events?.reduce((max, e) => e.peak_db > max ? e.peak_db : max, -Infinity) || 0
-  const peakEvent = events?.find(e => e.peak_db === peak)
+  const peak = events?.length ? events.reduce((max, e) => e.peak_db > max ? e.peak_db : max, -Infinity) : 0
+  const peakEvent = events?.length ? events.find(e => e.peak_db === peak) : null
   const soothedCount = events?.filter(e => e.voice_played_id).length || 0
   const duration = session.end_time
     ? Math.round((new Date(session.end_time) - new Date(session.start_time)) / 60000)

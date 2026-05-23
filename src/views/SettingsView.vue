@@ -22,11 +22,12 @@ onMounted(async () => {
   const { data: petData } = await supabase.from('pets').select('*').eq('id', route.params.petId).single()
   pet.value = petData
 
-  // Load latest calibration
+  // Load latest calibration (skip partial rows with no E_base)
   const { data: calData } = await supabase
     .from('pet_calibrations')
     .select('*')
     .eq('pet_id', route.params.petId)
+    .not('E_base', 'is', null)
     .order('calibrated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
