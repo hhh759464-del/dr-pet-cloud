@@ -13,12 +13,11 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 // ── module-level shared state (persists across useAudio() calls) ──
 const E_base = ref(null)
 const P_peak = ref(null)
-let threshold = null     // computed threshold (relative dB)
+let threshold = null
 let windowMs = WINDOW_MS
 let cooldownMs = COOLDOWN_DEFAULT_MS
 
 export function useAudio() {
-  // ── instance-level reactive state ──
   const state = ref('idle') // idle | calibrating | monitoring | triggered | cooldown
   const isListening = ref(false)
   const currentDb = ref(0)
@@ -26,37 +25,33 @@ export function useAudio() {
   const isPlayingSoothing = ref(false)
   const frequencyData = ref(new Uint8Array(128).fill(0))
   const timeData = ref(new Uint8Array(128).fill(128))
-  const calibrationProgress = ref(0)   // 0–100
+  const calibrationProgress = ref(0)
   const calibrationStep = ref(0)       // 0=none, 1=env, 2=pet, 3=done
 
-  // Display dB: automatically tracks E_base changes (Vue reactivity)
+  // Display dB: currentDb relative to E_base (0 = environment baseline)
   const displayDb = computed(() => {
     const e = E_base.value
     if (e == null) return currentDb.value
     return Math.round(currentDb.value - e)
   })
 
-  // internals
   let audioContext = null
   let analyser = null
   let stream = null
-  let sourceNode = null    // keep ref so we can disconnect/reconnect
+  let sourceNode = null
   let animationId = null
   let onTriggerCallback = null
   let onDbUpdateCallback = null
   let onStateChangeCallback = null
 
-  // sliding window
-  let spikeBuffer = []      // ring buffer of 1 | 0 entries (50 entries for 5s @ 100ms)
+  let spikeBuffer = []
   const maxBufLen = Math.ceil(WINDOW_MS / SAMPLE_INTERVAL_MS)
 
-  // cooldown
   let cooldownUntil = null
   let cooldownTimer = null
 
-  // marking mode
   let mediaRecorder = null
-  let markingBuffer = []     // recent MediaStream chunks for pre-trigger window
+  let markingBuffer = []
   let markingPetId = null
   let markingSessionId = null
 
@@ -109,6 +104,23 @@ export function useAudio() {
     }
   }
 
+  // ── quick auto-baseline: sample 2s of ambient noise ──
+  async function quickBaseline() {
+    const samples = []
+    const buf = new Uint8Array(analyser.frequencyBinCount)
+    const t0 = Date.now()
+    while (Date.now() - t0 < 2000) {
+      analyser.getByteTimeDomainData(buf)
+      samples.push(computeDb(buf))
+      await new Promise(r => setTimeout(r, 100))
+    }
+    samples.sort((a, b) => a - b)
+    // Use lower third as baseline (ignore transient noises)
+    const lower = samples.slice(0, Math.ceil(samples.length / 3))
+    const baseline = lower.reduce((a, b) => a + b, 0) / lower.length
+    E_base.value = Math.round(baseline)
+  }
+
   // ── calibration ──
   async function calibrate(petId, supabase, bodySize = 'medium') {
     changeState('calibrating')
@@ -116,7 +128,6 @@ export function useAudio() {
     calibrationStep.value = 1
     calibrationProgress.value = 0
 
-    // ── step 1: environment baseline (10 s, 10 Hz) ──
     const envSamples = []
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
@@ -139,7 +150,6 @@ export function useAudio() {
       }
       calibrationProgress.value = 100
 
-      // discard outliers (> 2x mean)
       const envMean = envSamples.reduce((a, b) => a + b, 0) / envSamples.length
       const filtered = envSamples.filter(v => v <= envMean * 2)
       const eBase = filtered.reduce((a, b) => a + b, 0) / filtered.length
@@ -150,11 +160,7 @@ export function useAudio() {
       throw new Error('麦克风权限被拒绝' + (err.message ? ': ' + err.message : ''))
     }
 
-    // ── step 2: pet vocalization peak (15 s, optional) ──
-    // Called externally: calibrateStep2() or skipStep2()
-    // We store the setup so step2 can reuse the same AudioContext / stream.
-    changeState('calibrating') // still calibrating, waiting for step 2
-
+    changeState('calibrating')
     return { eBase: E_base.value, done: false }
   }
 
@@ -187,33 +193,25 @@ export function useAudio() {
   function applyCalibration(bodySize, source = 'calibration') {
     const e = E_base.value
     const p = P_peak.value
+    const delta = (bodySize && BODY_SIZE_DELTA[bodySize]) || 15
 
     if (e == null) {
-      E_base.value = -60
-      const delta = (bodySize && BODY_SIZE_DELTA[bodySize]) || 15
-      threshold = Math.round(-60 + delta)
-      calibrationStep.value = 3
-      changeState('idle')
-      isListening.value = false
-      return { E_base: -60, P_peak: p, threshold, source: 'body_size_fallback' }
-    }
-
-    if (p != null && p > e) {
-      threshold = e + (p - e) * 0.5
-    } else if (bodySize && BODY_SIZE_DELTA[bodySize] !== undefined) {
-      threshold = e + BODY_SIZE_DELTA[bodySize]
-      source = 'body_size_fallback'
+      console.warn('[useAudio] applyCalibration: E_base is null, using delta as threshold')
+      E_base.value = 0
+      threshold = Math.round(delta)
+    } else if (p != null && p > e) {
+      threshold = Math.round(e + (p - e) * 0.5)
+      source = 'calibration'
     } else {
-      threshold = e + 15
+      threshold = Math.round(e + delta)
       source = 'body_size_fallback'
     }
 
-    threshold = Math.round(threshold)
     calibrationStep.value = 3
     changeState('idle')
     isListening.value = false
 
-    return { E_base: e, P_peak: p, threshold, source }
+    return { E_base: E_base.value, P_peak: p, threshold, source }
   }
 
   function getCalibration() {
@@ -232,13 +230,8 @@ export function useAudio() {
 
   // ── monitoring loop ──
   async function startListening(mode = 'guard', bodySize = 'medium') {
-    if (!hasCalibration()) {
-      // Auto-apply body-size fallback if no calibration yet
-      applyCalibration(bodySize, 'body_size_fallback')
-    }
-
+    // Set up audio context first
     if (stream && audioContext && analyser) {
-      // reuse existing audio context from calibration
       reconnectMic()
     } else {
       try {
@@ -253,23 +246,26 @@ export function useAudio() {
       }
     }
 
+    // Quick 2s auto-baseline if no calibration exists
+    if (!hasCalibration()) {
+      await quickBaseline()
+      applyCalibration(bodySize, 'body_size_fallback')
+    }
+
     frequencyData.value = new Uint8Array(analyser.frequencyBinCount)
     timeData.value = new Uint8Array(analyser.frequencyBinCount)
     spikeBuffer = []
     isListening.value = true
     changeState('monitoring')
 
-    // start MediaRecorder if marking mode
     if (mode === 'mark' && typeof MediaRecorder !== 'undefined') {
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/webm;codecs=opus'
       mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 64000 })
-
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) markingBuffer.push(e.data)
-        // keep only the last ~10s of chunks (ring buffer)
         while (markingBuffer.length > 20) markingBuffer.shift()
       }
-      mediaRecorder.start(500) // collect data every 500ms
+      mediaRecorder.start(500)
     }
 
     loop()
@@ -285,14 +281,10 @@ export function useAudio() {
     currentDb.value = Math.round(db)
     if (onDbUpdateCallback) onDbUpdateCallback(db)
 
-    // sliding window spike detection
-    const now = Date.now()
-
     if (state.value === 'monitoring') {
       pushSpike(db >= threshold ? 1 : 0)
       const spikes = countSpikes()
       if (spikes >= SPIKE_COUNT_TRIGGER) {
-        // trigger!
         changeState('triggered')
         isTriggered.value = true
         spikeBuffer = []
@@ -303,7 +295,7 @@ export function useAudio() {
     animationId = requestAnimationFrame(loop)
   }
 
-  // ── cooldown management ──
+  // ── cooldown ──
   function startCooldown() {
     changeState('cooldown')
     reconnectMic()
@@ -324,10 +316,10 @@ export function useAudio() {
     return Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000))
   }
 
-  // ── marking: save snippet ──
+  // ── marking ──
   function captureSnippet() {
     if (!markingBuffer.length) return null
-    const blob = new Blob(markingBuffer.slice(-6), { type: 'audio/webm' }) // last ~3s pre-trigger
+    const blob = new Blob(markingBuffer.slice(-6), { type: 'audio/webm' })
     return blob
   }
 
@@ -392,7 +384,6 @@ export function useAudio() {
     markingSessionId = null
   }
 
-  // Convert raw relative dB to display value (0 = environment baseline)
   function toDisplayDb(rawDb) {
     const e = E_base.value
     if (e == null) return rawDb

@@ -39,12 +39,11 @@ onMounted(async () => {
       .from('pet_calibrations')
       .select('*')
       .eq('pet_id', route.params.petId)
-      .not('E_base', 'is', null)
       .order('calibrated_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
-    if (calData?.threshold != null) {
+    if (calData?.threshold != null && calData?.E_base != null) {
       setCalibration(calData.E_base, calData.P_peak, calData.threshold)
     }
   }
