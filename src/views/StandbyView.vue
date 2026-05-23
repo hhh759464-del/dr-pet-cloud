@@ -6,7 +6,7 @@ import { useAudio } from '../composables/useAudio'
 
 const router = useRouter()
 const route = useRoute()
-const { hasCalibration } = useAudio()
+const { hasCalibration, setCalibration } = useAudio()
 
 const pet = ref(null)
 const lastSession = ref(null)
@@ -17,7 +17,22 @@ onMounted(async () => {
   const { data: petData } = await supabase.from('pets').select('*').eq('id', route.params.petId).single()
   pet.value = petData
 
-  // Check calibration — redirect if none
+  // Restore calibration from Supabase if not in memory (e.g. page refresh)
+  if (!hasCalibration()) {
+    const { data: calData } = await supabase
+      .from('pet_calibrations')
+      .select('*')
+      .eq('pet_id', route.params.petId)
+      .order('calibrated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (calData?.threshold != null) {
+      setCalibration(calData.E_base, calData.P_peak, calData.threshold)
+    }
+  }
+
+  // Check calibration — redirect if still none
   if (!hasCalibration()) {
     router.push(`/calibrate/${route.params.petId}`)
     return

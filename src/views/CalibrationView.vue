@@ -8,7 +8,7 @@ const router = useRouter()
 const route = useRoute()
 
 const {
-  calibrationProgress,
+  calibrationProgress, currentDb,
   E_base, P_peak,
   calibrate, calibrateStep2, applyCalibration,
   getThreshold, getCalibration, stopListening,
@@ -135,6 +135,8 @@ function goToGuard() {
       </div>
       <p class="text-xs text-gray-400 mb-8">{{ Math.ceil(calibrationProgress * 0.1) }} / 10 秒</p>
 
+      <p class="text-sm text-amber-700 mb-4">当前：{{ currentDb }} dB</p>
+
       <p class="text-xs text-gray-400 text-center max-w-xs">
         提示：正常的环境声音（窗外的车流声、空调声）都会被计入基线。
         请按宠物平时独处时的环境来设置（关窗/开窗、开空调等）。
@@ -174,6 +176,8 @@ function goToGuard() {
           :style="{ width: calibrationProgress + '%' }" />
       </div>
       <p class="text-xs text-gray-400 mb-8">{{ Math.ceil(calibrationProgress * 0.15) }} / 15 秒</p>
+
+      <p class="text-sm text-amber-700 mb-4">当前：{{ currentDb }} dB</p>
     </div>
 
     <!-- Done -->

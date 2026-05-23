@@ -10,8 +10,15 @@ const COOLDOWN_DEFAULT_MS = 60000
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
+// ── module-level shared state (persists across useAudio() calls) ──
+const E_base = ref(null)
+const P_peak = ref(null)
+let threshold = null     // computed threshold (relative dB)
+let windowMs = WINDOW_MS
+let cooldownMs = COOLDOWN_DEFAULT_MS
+
 export function useAudio() {
-  // ── reactive state ──
+  // ── instance-level reactive state ──
   const state = ref('idle') // idle | calibrating | monitoring | triggered | cooldown
   const isListening = ref(false)
   const currentDb = ref(0)
@@ -19,15 +26,8 @@ export function useAudio() {
   const isPlayingSoothing = ref(false)
   const frequencyData = ref(new Uint8Array())
   const timeData = ref(new Uint8Array())
-  const calibrationProgress = ref(0)   // 0–100, step 1 + step 2
+  const calibrationProgress = ref(0)   // 0–100
   const calibrationStep = ref(0)       // 0=none, 1=env, 2=pet, 3=done
-
-  // calibration results
-  const E_base = ref(null)
-  const P_peak = ref(null)
-  let threshold = null     // computed threshold (relative dB)
-  let windowMs = WINDOW_MS
-  let cooldownMs = COOLDOWN_DEFAULT_MS
 
   // internals
   let audioContext = null
@@ -126,6 +126,7 @@ export function useAudio() {
         analyser.getByteTimeDomainData(envTimeData)
         const db = computeDb(envTimeData)
         envSamples.push(db)
+        currentDb.value = Math.round(db)
         calibrationProgress.value = Math.min(100, Math.round((Date.now() - envStart) / 100))
         await new Promise(r => setTimeout(r, 100))
       }
@@ -162,6 +163,7 @@ export function useAudio() {
       analyser.getByteTimeDomainData(timeDataArr)
       const db = computeDb(timeDataArr)
       samples.push(db)
+      currentDb.value = Math.round(db)
       calibrationProgress.value = Math.min(100, Math.round((Date.now() - start) / 150))
       await new Promise(r => setTimeout(r, 100))
     }

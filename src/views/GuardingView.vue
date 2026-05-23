@@ -14,6 +14,7 @@ const {
   startListening, stopListening, setOnTrigger, setOnStateChange,
   hasCalibration, startCooldown, getCooldownRemaining,
   getThreshold, getEBase, disconnectMic, reconnectMic,
+  setCalibration,
 } = useAudio()
 
 const pet = ref(null)
@@ -31,6 +32,21 @@ let currentDay = ''
 onMounted(async () => {
   const { data: petData } = await supabase.from('pets').select('*').eq('id', route.params.petId).single()
   pet.value = petData
+
+  // Restore calibration from Supabase if not in memory
+  if (!hasCalibration()) {
+    const { data: calData } = await supabase
+      .from('pet_calibrations')
+      .select('*')
+      .eq('pet_id', route.params.petId)
+      .order('calibrated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (calData?.threshold != null) {
+      setCalibration(calData.E_base, calData.P_peak, calData.threshold)
+    }
+  }
 
   if (!hasCalibration()) {
     router.push(`/calibrate/${route.params.petId}?mode=guard`)
