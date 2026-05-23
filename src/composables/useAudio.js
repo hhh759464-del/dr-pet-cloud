@@ -33,11 +33,11 @@ export function useAudio() {
   // Smoothed display dB — separate EMA from detection for stable UI
   const smoothedDb = ref(0)
 
-  // Display dB: relative to environment baseline (0 = baseline)
+  // Display dB: relative to environment baseline (0 = baseline, always positive)
   const displayDb = computed(() => {
     const e = E_base.value
-    if (e == null) return currentDb.value
-    return Math.round(currentDb.value - e)
+    if (e == null) return Math.max(0, currentDb.value)
+    return Math.max(0, Math.round(currentDb.value - e))
   })
 
   // Jump threshold derived from calibration (or default)
@@ -410,8 +410,8 @@ export function useAudio() {
 
   function toDisplayDb(rawDb) {
     const e = E_base.value
-    if (e == null) return rawDb
-    return Math.round(rawDb - e)
+    if (e == null) return Math.max(0, rawDb)
+    return Math.max(0, Math.round(rawDb - e))
   }
 
   return {
