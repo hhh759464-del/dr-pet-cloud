@@ -10,11 +10,10 @@ const DISPLAY_ALPHA = 0.35
 const MIN_JUMP_DB = 6
 const MAX_JUMP_DB = 16
 const DEFAULT_JUMP_DB = 8
-const DB_OFFSET = 100  // 原始分贝(-100~-5)转换为显示分贝(0~95)
+const DB_OFFSET = 100
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
-// ── module-level shared state ──
 const E_base = ref(null)
 const P_peak = ref(null)
 let threshold = null
@@ -31,14 +30,12 @@ export function useAudio() {
   const calibrationProgress = ref(0)
   const calibrationStep = ref(0)
 
-  // Smoothed display dB — separate EMA from detection for stable UI
   const smoothedDb = ref(0)
 
   const displayDb = computed(() => {
     return Math.max(0, currentDb.value + DB_OFFSET)
   })
 
-  // Jump threshold derived from calibration (or default)
   function getJumpThreshold() {
     if (threshold != null && E_base.value != null) {
       return clamp(Math.round((threshold - E_base.value) * 0.35), MIN_JUMP_DB, MAX_JUMP_DB)
@@ -62,13 +59,13 @@ export function useAudio() {
   let onDbUpdateCallback = null
   let onStateChangeCallback = null
 
-  // EMA-based sudden-jump detection
   let dbEma = null
   let consecutiveJumps = 0
   let settleSamples = 0
 
   let cooldownUntil = null
   let cooldownTimer = null
+  let isMicDisconnected = false
 
   let mediaRecorder = null
   let markingBuffer = []
@@ -93,17 +90,19 @@ export function useAudio() {
   }
 
   function disconnectMic() {
-    if (sourceNode && analyser) {
-      try { sourceNode.disconnect(analyser) } catch (_) { /* already disconnected */ }
-    }
-  }
-  function reconnectMic() {
-    if (sourceNode && analyser) {
-      try { sourceNode.connect(analyser) } catch (_) { /* already connected */ }
+    if (sourceNode && analyser && !isMicDisconnected) {
+      try { sourceNode.disconnect(analyser) } catch (_) { }
+      isMicDisconnected = true
     }
   }
 
-  // Quick 2s ambient sampling for auto-baseline
+  function reconnectMic() {
+    if (sourceNode && analyser && isMicDisconnected) {
+      try { sourceNode.connect(analyser) } catch (_) { }
+      isMicDisconnected = false
+    }
+  }
+
   async function quickBaseline() {
     const samples = []
     const buf = new Uint8Array(analyser.frequencyBinCount)
@@ -250,11 +249,11 @@ export function useAudio() {
     frequencyData.value = new Uint8Array(analyser.frequencyBinCount)
     timeData.value = new Uint8Array(analyser.frequencyBinCount)
 
-    // Reset detection state
     dbEma = null
     consecutiveJumps = 0
     settleSamples = 0
     smoothedDb.value = 0
+    isMicDisconnected = false
 
     isListening.value = true
     changeState('monitoring')
@@ -281,7 +280,6 @@ export function useAudio() {
     const db = computeDb(timeData.value)
     currentDb.value = Math.round(db)
 
-    // Smooth display value separately from detection
     if (smoothedDb.value === 0) {
       smoothedDb.value = displayDb.value
     } else {
@@ -290,7 +288,6 @@ export function useAudio() {
 
     if (onDbUpdateCallback) onDbUpdateCallback(db)
 
-    // Sudden-jump detection (EMA-based, calibration-driven jump threshold)
     if (state.value === 'monitoring') {
       if (dbEma == null) {
         dbEma = db
@@ -303,8 +300,8 @@ export function useAudio() {
         settleSamples--
       } else {
         const jump = db - dbEma
-        const jumpDb = getJumpThreshold()
-        if (jump >= jumpDb) {
+        const jumpThreshold = getJumpThreshold()
+        if (jump >= jumpThreshold) {
           consecutiveJumps++
           if (consecutiveJumps >= SUSTAIN_SAMPLES) {
             changeState('triggered')
@@ -389,7 +386,7 @@ export function useAudio() {
       mediaRecorder.stop()
       mediaRecorder = null
     }
-    disconnectMic()
+    reconnectMic()
     if (stream) {
       stream.getTracks().forEach(t => t.stop())
       stream = null
@@ -408,6 +405,7 @@ export function useAudio() {
     consecutiveJumps = 0
     settleSamples = 0
     cooldownUntil = null
+    isMicDisconnected = false
     markingBuffer = []
     markingPetId = null
     markingSessionId = null
