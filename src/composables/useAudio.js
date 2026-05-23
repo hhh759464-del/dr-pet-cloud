@@ -424,7 +424,7 @@ export function useAudio() {
     startListening, stopListening,
     setOnTrigger, setOnDbUpdate, setOnStateChange,
     setCooldownMs,
-    getThreshold, getEBase, adjustThreshold,
+    getThreshold, getJumpThreshold, getEBase, adjustThreshold,
     disconnectMic, reconnectMic, startCooldown,
     getCooldownRemaining,
     captureSnippet, setMarkingContext, getMarkingContext,
