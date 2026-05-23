@@ -197,11 +197,11 @@ function goToGuard() {
         </div>
         <div class="flex justify-between">
           <span>宠物叫声峰值</span>
-          <span class="font-semibold">{{ calibrationResult.P_peak != null ? toDisplayDb(calibrationResult.P_peak) : '未采样' }} dB</span>
+          <span class="font-semibold">{{ calibrationResult.P_peak != null ? Math.round(calibrationResult.P_peak + 100) : '未采样' }} dB</span>
         </div>
         <div class="flex justify-between border-t border-amber-200 pt-2">
           <span>触发阈值</span>
-          <span class="font-semibold text-amber-800 text-lg">+{{ toDisplayDb(calibrationResult.threshold) }} dB</span>
+          <span class="font-semibold text-amber-800 text-lg">+{{ Math.round(calibrationResult.threshold + 100) }} dB</span>
         </div>
         <p class="text-xs text-gray-400 mt-1">
           {{ calibrationResult.source === 'calibration' ? '基于双步校准计算' : '基于体型自动估算' }}

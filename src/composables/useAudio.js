@@ -3,13 +3,14 @@ import { ref, computed } from 'vue'
 // ── sizing & detection constants ──
 const BODY_SIZE_DELTA = { small: 18, medium: 24, large: 30 }
 const COOLDOWN_DEFAULT_MS = 60000
-const SUSTAIN_SAMPLES = 4      // ~67ms at 60fps — filters clicks, catches bark onset
-const SETTLE_FRAMES = 90       // ~1.5s at 60fps — EMA stabilization after cooldown/trigger
-const EMA_ALPHA = 0.10         // detection EMA smoothing
-const DISPLAY_ALPHA = 0.35     // display needle smoothing
-const MIN_JUMP_DB = 6          // minimum jump threshold
-const MAX_JUMP_DB = 16         // maximum jump threshold
-const DEFAULT_JUMP_DB = 8      // fallback when no calibration
+const SUSTAIN_SAMPLES = 4
+const SETTLE_FRAMES = 90
+const EMA_ALPHA = 0.10
+const DISPLAY_ALPHA = 0.35
+const MIN_JUMP_DB = 6
+const MAX_JUMP_DB = 16
+const DEFAULT_JUMP_DB = 8
+const DB_OFFSET = 100  // 原始分贝(-100~-5)转换为显示分贝(0~95)
 
 function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
 
@@ -33,11 +34,8 @@ export function useAudio() {
   // Smoothed display dB — separate EMA from detection for stable UI
   const smoothedDb = ref(0)
 
-  // Display dB: relative to environment baseline (0 = baseline, always positive)
   const displayDb = computed(() => {
-    const e = E_base.value
-    if (e == null) return Math.max(0, currentDb.value)
-    return Math.max(0, Math.round(currentDb.value - e))
+    return Math.max(0, currentDb.value + DB_OFFSET)
   })
 
   // Jump threshold derived from calibration (or default)
@@ -46,6 +44,13 @@ export function useAudio() {
       return clamp(Math.round((threshold - E_base.value) * 0.35), MIN_JUMP_DB, MAX_JUMP_DB)
     }
     return DEFAULT_JUMP_DB
+  }
+
+  function getDisplayThreshold() {
+    if (threshold != null) {
+      return Math.round(threshold + DB_OFFSET)
+    }
+    return DEFAULT_JUMP_DB + DB_OFFSET
   }
 
   let audioContext = null
@@ -409,9 +414,7 @@ export function useAudio() {
   }
 
   function toDisplayDb(rawDb) {
-    const e = E_base.value
-    if (e == null) return Math.max(0, rawDb)
-    return Math.max(0, Math.round(rawDb - e))
+    return Math.max(0, Math.round(rawDb + DB_OFFSET))
   }
 
   return {
@@ -424,7 +427,7 @@ export function useAudio() {
     startListening, stopListening,
     setOnTrigger, setOnDbUpdate, setOnStateChange,
     setCooldownMs,
-    getThreshold, getJumpThreshold, getEBase, adjustThreshold,
+    getThreshold, getJumpThreshold, getDisplayThreshold, getEBase, adjustThreshold,
     disconnectMic, reconnectMic, startCooldown,
     getCooldownRemaining,
     captureSnippet, setMarkingContext, getMarkingContext,

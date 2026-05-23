@@ -13,7 +13,7 @@ const {
   state, isListening, currentDb, displayDb, smoothedDb, frequencyData, timeData,
   startListening, stopListening, setOnTrigger, setOnStateChange,
   hasCalibration, startCooldown, getCooldownRemaining,
-  getThreshold, getJumpThreshold, getEBase, disconnectMic, reconnectMic,
+  getThreshold, getJumpThreshold, getDisplayThreshold, getEBase, disconnectMic, reconnectMic,
   setCalibration, toDisplayDb,
 } = useAudio()
 
@@ -300,7 +300,7 @@ const statusText = computed(() => {
   return '正在监听中...'
 })
 
-const jumpThreshold = computed(() => getJumpThreshold())
+const jumpThreshold = computed(() => getDisplayThreshold())
 </script>
 
 <template>
