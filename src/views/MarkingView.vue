@@ -13,7 +13,7 @@ const {
   startListening, stopListening, setOnTrigger, setOnStateChange,
   captureSnippet, setMarkingContext, getMarkingContext,
   hasCalibration, startCooldown, getCooldownRemaining,
-  getThreshold, getEBase, setCalibration,
+  getThreshold, getEBase, setCalibration, toDisplayDb,
 } = useAudio()
 
 const pet = ref(null)
@@ -79,13 +79,12 @@ onUnmounted(() => {
 
 async function handleTrigger(db, markingBuffer) {
   const blob = captureSnippet()
-  if (!blob || !blob.size) return
+  if (!blob || blob.size < 1000) return
 
   const now = new Date()
   const timestamp = now.toISOString().replace(/[:.]/g, '-')
   const fileName = `audio_snippets/${route.params.petId}/${timestamp}.webm`
 
-  // Upload to Supabase Storage
   const { data: uploadData, error: uploadError } = await supabase.storage
     .from('audio_snippets')
     .upload(fileName, blob, { contentType: 'audio/webm' })
@@ -95,14 +94,12 @@ async function handleTrigger(db, markingBuffer) {
     return
   }
 
-  // Get public URL
   const { data: urlData } = supabase.storage.from('audio_snippets').getPublicUrl(fileName)
 
-  // Insert record
   const { data: record } = await supabase.from('audio_snippets').insert({
     pet_id: route.params.petId,
     session_id: sessionId.value,
-    peak_db: Math.round(db),
+    peak_db: Math.round(toDisplayDb(db)),
     audio_url: urlData?.publicUrl || '',
     recorded_at: now.toISOString(),
     label: null,
@@ -112,6 +109,8 @@ async function handleTrigger(db, markingBuffer) {
     snippets.value.unshift(record)
     lastSnippet.value = record
   }
+
+  startCooldown()
 }
 
 function handleStateChange(newState) {

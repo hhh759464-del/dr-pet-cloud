@@ -114,7 +114,7 @@ function handleStateChange(newState, prev) {
 
 async function handleAnxiety(db) {
   const now = new Date()
-  const peakDb = displayDb.value  // capture BEFORE any async — voice playback changes currentDb
+  const peakDb = toDisplayDb(db)  // capture BEFORE any async — voice playback changes currentDb
 
   disconnectMic()
 
@@ -219,20 +219,24 @@ async function checkMidnight() {
     )
     anxietyEvents.value = todayEvents
 
-    const st = buildStats(yesterday, yesterdayEvents)
+    const midnight = new Date(yesterday + 'T23:59:59')
+    const durationMs = midnight.getTime() - new Date(sessionStart.value).getTime()
+    const durationMinutes = Math.max(0, Math.round(durationMs / 60000))
+
+    const st = buildStats(yesterday, yesterdayEvents, durationMinutes)
     st.vsYesterday = await getVsYesterday(yesterday, st.anxietyCount)
     const summary = await generateReportSummary({ ...st, vsYesterday: st.vsYesterday || '暂无昨日数据对比' })
     await saveReport(pet.value.id, yesterday, summary, st)
   }
 }
 
-function buildStats(date, events) {
+function buildStats(date, events, durationMinutes = 0) {
   const peak = events.length ? events.reduce((max, e) => e.peakDb > max ? e.peakDb : max, -Infinity) : 0
   const peakEvent = events.length ? events.find(e => e.peakDb === peak) : null
   return {
     petName: pet.value?.name || '未知',
     date,
-    durationMinutes: 0,
+    durationMinutes,
     anxietyCount: events.length,
     peakDb: peak,
     peakTime: peakEvent ? new Date(peakEvent.time).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : 'N/A',

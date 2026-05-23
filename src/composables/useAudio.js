@@ -321,7 +321,6 @@ export function useAudio() {
   // ── cooldown ──
   function startCooldown() {
     changeState('cooldown')
-    reconnectMic()
     cooldownUntil = Date.now() + cooldownMs
 
     if (cooldownTimer) clearTimeout(cooldownTimer)
@@ -330,8 +329,9 @@ export function useAudio() {
         dbEma = null
         consecutiveJumps = 0
         settleSamples = 0
-        changeState('monitoring')
         cooldownUntil = null
+        reconnectMic()
+        changeState('monitoring')
       }
     }, cooldownMs)
   }
