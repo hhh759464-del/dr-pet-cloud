@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 // ── default sizing & windowing constants (see PRD §6.4, §6.7) ──
 const BODY_SIZE_DELTA = { small: 10, medium: 15, large: 20 }
@@ -28,6 +28,13 @@ export function useAudio() {
   const timeData = ref(new Uint8Array(128).fill(128))
   const calibrationProgress = ref(0)   // 0–100
   const calibrationStep = ref(0)       // 0=none, 1=env, 2=pet, 3=done
+
+  // Display dB: automatically tracks E_base changes (Vue reactivity)
+  const displayDb = computed(() => {
+    const e = E_base.value
+    if (e == null) return currentDb.value
+    return Math.round(currentDb.value - e)
+  })
 
   // internals
   let audioContext = null
@@ -383,7 +390,7 @@ export function useAudio() {
   }
 
   return {
-    state, isListening, currentDb, isTriggered, isPlayingSoothing,
+    state, isListening, currentDb, displayDb, isTriggered, isPlayingSoothing,
     frequencyData, timeData,
     calibrationProgress, calibrationStep,
     E_base, P_peak,

@@ -10,7 +10,7 @@ const router = useRouter()
 const route = useRoute()
 
 const {
-  state, isListening, currentDb, frequencyData, timeData,
+  state, isListening, currentDb, displayDb, frequencyData, timeData,
   startListening, stopListening, setOnTrigger, setOnStateChange,
   hasCalibration, startCooldown, getCooldownRemaining,
   getThreshold, getEBase, disconnectMic, reconnectMic,
@@ -357,7 +357,7 @@ const threshold = computed(() => getThreshold())
 
       <!-- Current dB -->
       <p class="text-xs text-gray-400 mt-4">
-        当前: {{ toDisplayDb(currentDb) }} dB / 阈值: +{{ toDisplayDb(threshold) }} dB
+        当前: {{ displayDb }} dB / 阈值: +{{ toDisplayDb(threshold) }} dB
       </p>
     </div>
 
